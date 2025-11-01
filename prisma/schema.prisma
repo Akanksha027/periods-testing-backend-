@@ -1,0 +1,107 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String         @id @default(uuid())
+  email         String         @unique
+  supabaseId    String         @unique
+  name          String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  
+  periods       Period[]
+  symptoms      Symptom[]
+  moods         Mood[]
+  notes         Note[]
+  settings      UserSettings?
+  
+  @@map("users")
+}
+
+model UserSettings {
+  id                    String    @id @default(uuid())
+  userId                String    @unique
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  averageCycleLength    Int       @default(28)
+  averagePeriodLength   Int       @default(5)
+  reminderEnabled       Boolean   @default(true)
+  reminderDaysBefore    Int       @default(3)
+  
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  @@map("user_settings")
+}
+
+model Period {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  startDate   DateTime
+  endDate     DateTime?
+  flowLevel   String?   // light, medium, heavy
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  @@index([userId])
+  @@map("periods")
+}
+
+model Symptom {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  date        DateTime
+  type        String    // cramps, headache, bloating, fatigue, etc.
+  severity    Int       // 1-5 scale
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  @@index([userId, date])
+  @@map("symptoms")
+}
+
+model Mood {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  date        DateTime
+  type        String    // happy, sad, anxious, angry, calm, etc.
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  @@index([userId, date])
+  @@map("moods")
+}
+
+model Note {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  date        DateTime
+  content     String
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  @@index([userId, date])
+  @@map("notes")
+}
+
