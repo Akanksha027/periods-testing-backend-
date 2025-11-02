@@ -42,7 +42,7 @@ DATABASE_URL
 ```
 **Value:**
 ```
-postgresql://postgres.sdujszipolfokscvgzjg:Akanksha2005@aws-0-ap-south-1.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1
+postgresql://postgres.sdujszipolfokscvgzjg:Loveakanksha@27@aws-0-ap-south-1.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1
 ```
 
 ## Step 2: Redeploy
