@@ -101,23 +101,55 @@ Keep responses concise (2-4 sentences typically) but comprehensive. Be a friend 
     // Initialize Gemini client
     const genAI = getGeminiClient()
     
-    // Use gemini-1.5-pro which is the most reliable and widely available model
-    // This model supports system instructions and generateContent
-    const model = genAI.getGenerativeModel({ 
-      model: 'gemini-1.5-pro', 
-      systemInstruction: enhancedSystemPrompt,
-    })
+    // Try models in order - model initialization doesn't fail, so we need to try generateContent
+    const modelNames = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
     
-    console.log('Calling Gemini API (gemini-1.5-pro) with conversation history length:', conversationHistory.length)
+    let result
+    let lastError: any = null
+    
+    for (const modelName of modelNames) {
+      try {
+        console.log(`Trying Gemini model: ${modelName}`)
+        const model = genAI.getGenerativeModel({ 
+          model: modelName, 
+          systemInstruction: enhancedSystemPrompt,
+        })
+        
+        console.log(`Calling Gemini API (${modelName}) with conversation history length:`, conversationHistory.length)
 
-    // Generate response
-    const result = await model.generateContent({
-      contents: conversationHistory,
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 300,
-      },
-    })
+        // Generate response - this is where 404 errors occur if model doesn't exist
+        result = await model.generateContent({
+          contents: conversationHistory,
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 300,
+          },
+        })
+        
+        console.log(`✅ Successfully got response from Gemini model: ${modelName}`)
+        break
+      } catch (error: any) {
+        console.log(`❌ Failed with ${modelName}:`, error?.message || error?.statusText || 'Unknown error')
+        lastError = error
+        
+        // Check if it's a 404 (model not found) - try next model
+        if (error?.status === 404 || error?.statusText === 'Not Found' || error?.message?.includes('404') || error?.message?.includes('not found')) {
+          console.log(`Model ${modelName} not available, trying next...`)
+          if (modelName === modelNames[modelNames.length - 1]) {
+            // Last model failed
+            throw new Error(`All models failed. Last error: ${error?.message || error?.statusText || 'Model not found'}`)
+          }
+          continue
+        } else {
+          // Other error - throw immediately
+          throw error
+        }
+      }
+    }
+
+    if (!result) {
+      throw lastError || new Error('Failed to get response from any Gemini model')
+    }
 
     console.log('Gemini API response received')
 
