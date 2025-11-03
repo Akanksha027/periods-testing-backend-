@@ -226,29 +226,43 @@ CRITICAL RULES:
         }
         
         // Current period status
-        // Match frontend calculation exactly: normalize to start of day in local timezone
+        // Match frontend calculation: extract date components to avoid timezone issues
         const today = new Date()
-        today.setHours(0, 0, 0, 0)
+        const todayYear = today.getFullYear()
+        const todayMonth = today.getMonth()
+        const todayDay = today.getDate()
+        
+        // Create a date at midnight in the server's local timezone for today
+        const todayLocal = new Date(todayYear, todayMonth, todayDay)
+        todayLocal.setHours(0, 0, 0, 0)
         
         const activePeriod = dbUser.periods.find(p => {
+          // Parse period start date and normalize to date components
           const start = new Date(p.startDate)
-          start.setHours(0, 0, 0, 0)
+          const startLocal = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+          startLocal.setHours(0, 0, 0, 0)
+          
           const end = p.endDate ? new Date(p.endDate) : null
+          let endLocal = null
           if (end) {
-            end.setHours(0, 0, 0, 0)
+            endLocal = new Date(end.getFullYear(), end.getMonth(), end.getDate())
+            endLocal.setHours(0, 0, 0, 0)
           }
+          
           // Check if today is within period range (inclusive)
-          return start <= today && (!end || end >= today)
+          return startLocal <= todayLocal && (!endLocal || endLocal >= todayLocal)
         })
         
         if (activePeriod) {
+          // Parse period start and normalize to date components (avoid timezone issues)
           const periodStart = new Date(activePeriod.startDate)
-          periodStart.setHours(0, 0, 0, 0)
+          const periodStartLocal = new Date(periodStart.getFullYear(), periodStart.getMonth(), periodStart.getDate())
+          periodStartLocal.setHours(0, 0, 0, 0)
           
           // Match frontend calculation exactly:
-          // Math.floor((dayDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1
-          // Both dates are normalized to midnight in the same timezone (local or UTC, but consistent)
-          const diff = Math.floor((today.getTime() - periodStart.getTime()) / (1000 * 60 * 60 * 24))
+          // Frontend does: Math.floor((dayDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1
+          // Where both dates are created from date components in local timezone
+          const diff = Math.floor((todayLocal.getTime() - periodStartLocal.getTime()) / (1000 * 60 * 60 * 24))
           const daysInPeriod = diff + 1
           userCycleContext += `- Currently on Period: Day ${daysInPeriod} (${activePeriod.flowLevel || 'unknown'} flow)\n`
         }
