@@ -89,12 +89,26 @@ Keep responses concise (2-4 sentences typically) but comprehensive. Be a friend 
       }
     }
 
+    // Validate that we have at least one user message
+    if (conversationHistory.length === 0 || conversationHistory[conversationHistory.length - 1].role !== 'user') {
+      console.error('No user message found in conversation history')
+      return NextResponse.json(
+        { error: 'No message provided' },
+        { status: 400 }
+      )
+    }
+
     // Initialize Gemini model
     const genAI = getGeminiClient()
+    // Use gemini-pro as it's the standard free tier model
     const model = genAI.getGenerativeModel({ 
-      model: 'gemini-1.5-flash', // Using the free Gemini Flash model
+      model: 'gemini-pro', 
       systemInstruction: enhancedSystemPrompt,
     })
+    
+    console.log('Initialized Gemini model: gemini-pro')
+
+    console.log('Calling Gemini API with conversation history length:', conversationHistory.length)
 
     // Generate response
     const result = await model.generateContent({
@@ -105,20 +119,30 @@ Keep responses concise (2-4 sentences typically) but comprehensive. Be a friend 
       },
     })
 
+    console.log('Gemini API response received')
+
     const responseContent = result.response.text() || 'I apologize, but I\'m having trouble right now. Please try again. 💕'
 
     return NextResponse.json({ message: responseContent })
   } catch (error: any) {
     console.error('Chat error:', error)
     console.error('Error details:', error?.message, error?.stack)
-    console.error('Full error object:', JSON.stringify(error, null, 2))
+    console.error('Error status:', error?.status, error?.statusText)
+    console.error('Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2))
     
     // Provide more specific error messages
     let errorMessage = 'Failed to get chat response'
-    if (error?.message?.includes('API key')) {
+    let statusCode = 500
+    
+    if (error?.status === 404 || error?.statusText === 'Not Found') {
+      errorMessage = 'AI model not found. Please check API configuration.'
+      statusCode = 404
+    } else if (error?.message?.includes('API key') || error?.status === 401 || error?.status === 403) {
       errorMessage = 'AI service configuration error. Please contact support.'
-    } else if (error?.message?.includes('rate limit')) {
+      statusCode = 500
+    } else if (error?.message?.includes('rate limit') || error?.status === 429) {
       errorMessage = 'AI service is busy. Please try again in a moment.'
+      statusCode = 429
     } else if (error?.message) {
       // Include more details in development
       errorMessage = process.env.NODE_ENV === 'development' 
@@ -133,9 +157,11 @@ Keep responses concise (2-4 sentences typically) but comprehensive. Be a friend 
           message: error?.message,
           stack: error?.stack,
           name: error?.name,
+          status: error?.status,
+          statusText: error?.statusText,
         } : undefined 
       },
-      { status: 500 }
+      { status: statusCode }
     )
   }
 }
