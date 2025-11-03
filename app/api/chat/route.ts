@@ -34,29 +34,29 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { messages, symptoms } = body
 
-    // Fetch ALL user data from database for complete context
-    const dbUser = await prisma.user.findUnique({
-      where: { supabaseId: user.id },
-      include: {
-        settings: true,
-        periods: {
-          orderBy: { startDate: 'desc' },
-          // Get all periods for complete cycle analysis
-        },
-        symptoms: {
-          orderBy: { date: 'desc' },
-          // Get all symptoms for comprehensive pattern recognition
-        },
-        moods: {
-          orderBy: { date: 'desc' },
-          // Get all moods to understand emotional patterns
-        },
-        notes: {
-          orderBy: { date: 'desc' },
-          // Get all notes to understand user's personal concerns and experiences
-        },
-      },
-    })
+            // Fetch user data from database - LIMIT to recent data for performance
+            const dbUser = await prisma.user.findUnique({
+              where: { supabaseId: user.id },
+              include: {
+                settings: true,
+                periods: {
+                  orderBy: { startDate: 'desc' },
+                  take: 12, // Only last 12 periods (enough for cycle analysis)
+                },
+                symptoms: {
+                  orderBy: { date: 'desc' },
+                  take: 50, // Only last 50 symptoms (recent pattern recognition)
+                },
+                moods: {
+                  orderBy: { date: 'desc' },
+                  take: 50, // Only last 50 moods (recent emotional patterns)
+                },
+                notes: {
+                  orderBy: { date: 'desc' },
+                  take: 20, // Only last 20 notes (recent concerns)
+                },
+              },
+            })
     const userName = dbUser?.name || 'there'
 
     // Check if Gemini API key is configured
@@ -416,16 +416,17 @@ CRITICAL RULES:
     // Initialize Gemini client
     const genAI = getGeminiClient()
     
-    // List available models first (for debugging)
-    if (process.env.NODE_ENV === 'development') {
+    // Skip model listing in production for faster response
+    // Only list models in development mode
+    if (process.env.NODE_ENV === 'development' && false) { // Disabled for performance
       const availableModels = await listAvailableModels(process.env.GEMINI_API_KEY!)
-      console.log('Available Gemini models:', availableModels.slice(0, 10)) // Log first 10
+      console.log('Available Gemini models:', availableModels.slice(0, 10))
     }
     
-    // Use models that are actually available based on API response
+    // Use fastest model first - gemini-2.5-flash is fastest
     // The SDK expects model name without 'models/' prefix
-    // Available stable models from your API: gemini-2.5-flash, gemini-2.5-pro, gemini-2.0-flash
-    const modelNames = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro', 'gemini-flash-latest', 'gemini-pro-latest']
+    // Prioritize speed: flash models are faster than pro models
+    const modelNames = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest', 'gemini-2.5-pro', 'gemini-pro-latest']
     
     let result
     let lastError: any = null
@@ -447,12 +448,14 @@ CRITICAL RULES:
             await new Promise(resolve => setTimeout(resolve, delay))
           }
           
-          console.log(`Calling Gemini API (${modelName}) - attempt ${attempt + 1}/${maxRetries}`)
+          // Call Gemini API with optimized config for speed
           const response = await model.generateContent({
             contents: conversationHistory,
             generationConfig: {
               temperature: 0.7,
-              maxOutputTokens: 2000,
+              maxOutputTokens: 1500, // Reduced from 2000 for faster responses
+              topP: 0.9,
+              topK: 40,
             },
           })
           
