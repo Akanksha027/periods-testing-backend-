@@ -197,9 +197,10 @@ CRITICAL RULES:
             const diff = Math.ceil((current.getTime() - next.getTime()) / (1000 * 60 * 60 * 24))
             cycles.push(Math.abs(diff))
             
-            if (dbUser.periods[i].endDate) {
+            const endDate = dbUser.periods[i].endDate
+            if (endDate) {
               const periodStart = new Date(dbUser.periods[i].startDate)
-              const periodEnd = new Date(dbUser.periods[i].endDate)
+              const periodEnd = new Date(endDate)
               const periodDays = Math.ceil((periodEnd.getTime() - periodStart.getTime()) / (1000 * 60 * 60 * 24)) + 1
               periodLengths.push(periodDays)
             }
