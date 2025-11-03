@@ -101,48 +101,23 @@ Keep responses concise (2-4 sentences typically) but comprehensive. Be a friend 
     // Initialize Gemini client
     const genAI = getGeminiClient()
     
-    // Try different model names - the available models depend on API access
-    // Try newer models first, then fallback to older ones
-    const modelNames = ['gemini-2.0-flash-exp', 'gemini-1.5-flash', 'gemini-pro']
+    // Use gemini-1.5-pro which is the most reliable and widely available model
+    // This model supports system instructions and generateContent
+    const model = genAI.getGenerativeModel({ 
+      model: 'gemini-1.5-pro', 
+      systemInstruction: enhancedSystemPrompt,
+    })
     
-    let result
-    let lastError: any = null
-    
-    for (const modelName of modelNames) {
-      try {
-        console.log(`Trying Gemini model: ${modelName}`)
-        const model = genAI.getGenerativeModel({ 
-          model: modelName, 
-          systemInstruction: enhancedSystemPrompt,
-        })
-        
-        console.log('Calling Gemini API with conversation history length:', conversationHistory.length)
+    console.log('Calling Gemini API (gemini-1.5-pro) with conversation history length:', conversationHistory.length)
 
-        // Generate response
-        result = await model.generateContent({
-          contents: conversationHistory,
-          generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 300,
-          },
-        })
-        
-        console.log(`Successfully got response from Gemini model: ${modelName}`)
-        break
-      } catch (error: any) {
-        console.log(`Failed with ${modelName}:`, error?.message)
-        lastError = error
-        // Continue to next model
-        if (modelName === modelNames[modelNames.length - 1]) {
-          // Last model failed, throw error
-          throw lastError
-        }
-      }
-    }
-
-    if (!result) {
-      throw lastError || new Error('Failed to get response from any Gemini model')
-    }
+    // Generate response
+    const result = await model.generateContent({
+      contents: conversationHistory,
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 300,
+      },
+    })
 
     console.log('Gemini API response received')
 
