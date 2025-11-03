@@ -119,9 +119,10 @@ Keep responses concise (2-4 sentences typically) but comprehensive. Be a friend 
       console.log('Available Gemini models:', availableModels.slice(0, 10)) // Log first 10
     }
     
-    // Try models in order - using the most commonly available model names
-    // Format: model name without 'models/' prefix
-    const modelNames = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
+    // Use models that are actually available based on API response
+    // The SDK expects model name without 'models/' prefix
+    // Available stable models from your API: gemini-2.5-flash, gemini-2.5-pro, gemini-2.0-flash
+    const modelNames = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro', 'gemini-flash-latest', 'gemini-pro-latest']
     
     let result
     let lastError: any = null
