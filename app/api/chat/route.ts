@@ -100,13 +100,13 @@ Keep responses concise (2-4 sentences typically) but comprehensive. Be a friend 
 
     // Initialize Gemini model
     const genAI = getGeminiClient()
-    // Use gemini-pro as it's the standard free tier model
+    // Use gemini-1.5-flash - this is the correct model name for v1beta API
     const model = genAI.getGenerativeModel({ 
-      model: 'gemini-pro', 
+      model: 'gemini-1.5-flash', 
       systemInstruction: enhancedSystemPrompt,
     })
     
-    console.log('Initialized Gemini model: gemini-pro')
+    console.log('Initialized Gemini model: gemini-1.5-flash')
 
     console.log('Calling Gemini API with conversation history length:', conversationHistory.length)
 
