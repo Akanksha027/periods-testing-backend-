@@ -34,10 +34,20 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { messages, symptoms } = body
 
-    // Fetch user's name from database
+    // Fetch user's complete data from database
     const dbUser = await prisma.user.findUnique({
       where: { supabaseId: user.id },
-      select: { name: true },
+      include: {
+        settings: true,
+        periods: {
+          orderBy: { startDate: 'desc' },
+          take: 12, // Last 12 periods for pattern analysis
+        },
+        symptoms: {
+          orderBy: { date: 'desc' },
+          take: 30, // Last 30 symptom entries
+        },
+      },
     })
     const userName = dbUser?.name || 'there'
 
@@ -63,64 +73,136 @@ Communication Style:
 - Clearly distinguish between normal symptoms and when medical attention is needed
 
 Response Structure for Symptom Queries:
-1. FIRST: Provide comprehensive information and understanding about the symptom
-   - Explain what the symptom is and why it occurs
-   - Discuss what's normal and what might need attention
-   - Provide evidence-based tips and remedies
-   - Include dietary and lifestyle recommendations
-   - Explain the underlying causes when relevant
+1. FIRST: Focus on PRACTICAL TIPS and SUGGESTIONS (70% of response)
+   - Provide actionable, easy-to-implement remedies
+   - List specific things they can do RIGHT NOW to feel better
+   - Include dietary recommendations with specific foods
+   - Mention lifestyle changes and exercises
+   - Keep scientific explanations BRIEF (just 1-2 sentences on why it happens)
+   - Focus on "what you can do" rather than "why it happens"
 
-2. THEN: If appropriate, mention helpful products at the END
+2. THEN: Brief scientific understanding (20% of response)
+   - Very short explanation of what the symptom is (1-2 sentences)
+   - When to seek medical attention (clear and concise)
+
+3. FINALLY: Product suggestions at the END (10% of response)
    - Present products as helpful tools, not as sponsorships
    - Frame as "You might find these products helpful:" or "Some people find relief with:"
    - Provide web search links (NOT deep links) for delivery apps
    - Format links as clickable web URLs that open in browser
 
-Example response format for "I am having cramps":
-"Menstrual cramps, also known as dysmenorrhea, occur when the uterus contracts to shed its lining. This is a normal physiological process, though the intensity can vary from person to person.
+Example response format for "I am having cramps" (FOLLOW THIS STRUCTURE):
+"[User's Name], here are immediate steps you can take to relieve cramps:
 
-Cramps typically happen due to prostaglandins, hormone-like substances that cause uterine contractions. Mild to moderate cramps are usually manageable at home, while severe cramps might indicate conditions like endometriosis or fibroids.
+IMMEDIATE RELIEF TIPS:
+1. Apply heat: Place a hot water bottle or heating pad on your lower abdomen for 15-20 minutes. The warmth helps relax uterine muscles and improves blood flow. You can repeat this every few hours.
 
-Here are evidence-based approaches to manage cramps:
+2. Try gentle movement: Take a slow 10-minute walk or do gentle stretches. This increases endorphins and improves circulation, which can reduce pain.
 
-1. Heat Therapy: Applying heat to your lower abdomen can help relax uterine muscles and improve blood flow. A heating pad or warm compress for 15-20 minutes at a time can be effective.
+3. Take OTC pain relief: Ibuprofen or naproxen taken at the start of cramps can be very effective. These work by reducing the production of pain-causing prostaglandins.
 
-2. Over-the-counter pain relief: Nonsteroidal anti-inflammatory drugs (NSAIDs) like ibuprofen or naproxen can reduce prostaglandin production and alleviate pain. Take them at the onset of cramps for best results.
+4. Drink warm liquids: Herbal teas (chamomile, ginger) or warm water can help relax your body. Avoid caffeine as it can make cramps worse.
 
-3. Gentle exercise: Light activities like walking or yoga can increase endorphins and improve blood circulation, which may reduce cramp intensity.
+5. Practice deep breathing: Take slow, deep breaths (inhale for 4 counts, hold for 4, exhale for 4). This activates your body's relaxation response.
 
-4. Dietary adjustments: Foods rich in magnesium (leafy greens, nuts) and omega-3 fatty acids (salmon, flaxseeds) may help reduce inflammation. Staying hydrated is also important.
+6. Dietary support: Eat magnesium-rich foods like bananas, dark chocolate, or spinach. Stay hydrated with water throughout the day.
 
-5. Relaxation techniques: Deep breathing, meditation, or a warm bath can help your body relax and reduce muscle tension.
+WHAT CAUSES CRAMPS: Menstrual cramps occur when the uterus contracts to shed its lining, triggered by hormone-like substances called prostaglandins. This is normal, though severity varies.
 
-If your cramps are severe, interfere with daily activities, or are accompanied by heavy bleeding, fever, or other concerning symptoms, it's important to consult with a healthcare provider.
+WHEN TO SEE A DOCTOR: If cramps are severe enough to interfere with daily activities, last more than 2-3 days, or are accompanied by heavy bleeding or fever, consult a healthcare provider.
 
-[Then at the end, if helpful]: You might find these products useful for relief:
-• Hot water bag or heating pad: https://www.swiggy.com/instamart/search?q=heating+pad
-• Pain relief medication: https://www.bigbasket.com/search/?q=ibuprofen
-• Herbal teas: https://www.swiggy.com/instamart/search?q=chamomile+tea"
+[Product suggestions at end]: You might find these helpful:
+• Heating pad: https://www.swiggy.com/instamart/search?q=heating+pad
+• Ibuprofen: https://www.bigbasket.com/search/?q=ibuprofen
+• Herbal tea: https://www.swiggy.com/instamart/search?q=chamomile+tea"
 
 CRITICAL RULES:
 1. ALWAYS address the user by their name if provided (use "${userName}" in your responses)
 2. NO emojis, hearts, flowers, or casual language - maintain professional medical tone
-3. Provide comprehensive information FIRST - explain symptoms, causes, and evidence-based remedies
-4. Product suggestions come LAST, framed as optional helpful tools
-5. Use web URLs (https://) not deep links (app://) - links should open in browser
-6. Format product links clearly with the product name and clickable URL on same line
-7. Never make product links sound like advertising - present as helpful resources
-8. Focus on education, understanding, and evidence-based information
-9. Maintain professional medical communication standards throughout`
+3. PRIORITIZE PRACTICAL TIPS (70%) over scientific explanations (20%) - users want actionable advice
+4. Keep scientific explanations BRIEF - just 1-2 sentences explaining what causes the symptom
+5. Focus on "what they can do" rather than lengthy explanations of "why it happens"
+6. Product suggestions come LAST (10%), framed as optional helpful tools
+7. Use web URLs (https://) not deep links (app://) - links should open in browser
+8. Format product links clearly with the product name and clickable URL on same line
+9. Never make product links sound like advertising - present as helpful resources
+10. When user asks about THEIR patterns/cycle but hasn't entered data: Tell them to update the app first, but still answer other general questions
+11. When user HAS entered data: Use their actual cycle and symptom information to provide personalized insights
+12. Keep responses COMPLETE - never cut off mid-sentence
+13. Maintain professional medical communication standards throughout`
 
-    // Add symptom context to system prompt if provided
+    // Build user cycle context
+    let userCycleContext = ''
+    const hasPeriodData = dbUser?.periods && dbUser.periods.length > 0
+    const hasSymptomData = dbUser?.symptoms && dbUser.symptoms.length > 0
+    const hasSettings = dbUser?.settings
+    
+    if (hasPeriodData || hasSymptomData || hasSettings) {
+      userCycleContext += `\n\nUSER'S CYCLE INFORMATION (use this when answering questions about their patterns, cycle, or symptoms):\n`
+      
+      if (hasPeriodData) {
+        const recentPeriods = dbUser.periods.slice(0, 6)
+        const periodDates = recentPeriods.map(p => {
+          const start = new Date(p.startDate).toLocaleDateString()
+          const end = p.endDate ? new Date(p.endDate).toLocaleDateString() : 'ongoing'
+          return `${start} to ${end}${p.flowLevel ? ` (${p.flowLevel} flow)` : ''}`
+        }).join(', ')
+        userCycleContext += `- Recent Period Dates: ${periodDates}\n`
+        
+        // Calculate cycle length if we have multiple periods
+        if (recentPeriods.length >= 2) {
+          const cycles = []
+          for (let i = 0; i < recentPeriods.length - 1; i++) {
+            const current = new Date(recentPeriods[i].startDate)
+            const next = new Date(recentPeriods[i + 1].startDate)
+            const diff = Math.ceil((current.getTime() - next.getTime()) / (1000 * 60 * 60 * 24))
+            cycles.push(Math.abs(diff))
+          }
+          const avgCycle = Math.round(cycles.reduce((a, b) => a + b, 0) / cycles.length)
+          userCycleContext += `- Average Cycle Length: ${avgCycle} days\n`
+        }
+      }
+      
+      if (hasSymptomData) {
+        const recentSymptoms = dbUser.symptoms.slice(0, 10)
+        const symptomTypes = recentSymptoms.map(s => `${s.type} (severity: ${s.severity}/5)`).join(', ')
+        userCycleContext += `- Recent Symptoms Tracked: ${symptomTypes}\n`
+        
+        // Most common symptoms
+        const symptomCounts: Record<string, number> = {}
+        dbUser.symptoms.forEach(s => {
+          symptomCounts[s.type] = (symptomCounts[s.type] || 0) + 1
+        })
+        const mostCommon = Object.entries(symptomCounts)
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, 3)
+          .map(([type]) => type)
+          .join(', ')
+        if (mostCommon) {
+          userCycleContext += `- Most Common Symptoms: ${mostCommon}\n`
+        }
+      }
+      
+      if (hasSettings) {
+        userCycleContext += `- Average Cycle Length: ${dbUser.settings.averageCycleLength} days\n`
+        userCycleContext += `- Average Period Length: ${dbUser.settings.averagePeriodLength} days\n`
+      }
+      
+      userCycleContext += `\nWhen the user asks about their patterns, cycle predictions, or symptom trends, use this information. If they ask specific questions about their cycle and you have this data, provide personalized insights based on their actual data.`
+    } else {
+      userCycleContext += `\n\nIMPORTANT: The user has NOT entered any cycle or symptom data in the app yet. If they ask about their personal patterns, cycle predictions, or specific symptoms they've tracked, you should say: "I notice you haven't updated your period and symptom information in the app yet. To give you personalized insights about your cycle patterns, please log your periods and symptoms in the app first. However, I can still help you with general questions about menstrual health!"`
+    }
+    
+    // Add symptom context from current chat if provided
     let enhancedSystemPrompt = systemPrompt.replace('${userName}', userName)
     if (symptoms && symptoms.length > 0) {
       const symptomsList = symptoms
         .map((s: any) => `${s.symptom} (${s.severity?.replace('_', ' ') || 'moderate'})`)
         .join(', ')
-      enhancedSystemPrompt += `\n\nContext: The user has been tracking these symptoms: ${symptomsList}. When answering, consider all these symptoms together to provide comprehensive, evidence-based advice. Assess their overall condition, explain what's normal and what may need medical attention, and provide professional guidance.`
-    } else {
-      enhancedSystemPrompt += `\n\nRemember to address the user as "${userName}" throughout your responses when appropriate.`
+      enhancedSystemPrompt += `\n\nCURRENT CHAT CONTEXT: The user just mentioned/tracked these symptoms: ${symptomsList}. Address these specifically in your response.`
     }
+    
+    enhancedSystemPrompt += userCycleContext
 
     // Build the conversation history for Gemini (limit to last 10 messages)
     const recentMessages = messages.slice(-10)
@@ -193,7 +275,7 @@ CRITICAL RULES:
           contents: conversationHistory,
           generationConfig: {
             temperature: 0.7,
-            maxOutputTokens: 1000, // Increased to allow product links and detailed recommendations
+            maxOutputTokens: 2000, // Increased significantly to prevent cut-off responses
           },
         })
         
