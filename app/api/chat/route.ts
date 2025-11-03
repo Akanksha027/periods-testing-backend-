@@ -46,9 +46,6 @@ When answering questions about symptoms:
 
 Keep responses concise (2-4 sentences typically) but comprehensive. Be a friend who knows about women's health. Be empathetic and kind.`
 
-    // Build the conversation history for Gemini
-    const conversationHistory: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = []
-
     // Add symptom context to system prompt if provided
     let enhancedSystemPrompt = systemPrompt
     if (symptoms && symptoms.length > 0) {
@@ -58,9 +55,12 @@ Keep responses concise (2-4 sentences typically) but comprehensive. Be a friend 
       enhancedSystemPrompt += `\n\nContext: The user has been tracking these symptoms: ${symptomsList}. When answering, consider all these symptoms together to provide comprehensive advice. Tell them if they are okay, if they are severe, and what they should do. Be caring and supportive.`
     }
 
-    // Add conversation history (limit to last 10 messages to avoid token limits)
+    // Build the conversation history for Gemini (limit to last 10 messages)
     const recentMessages = messages.slice(-10)
-    recentMessages.forEach((msg: { role: string; content: string }) => {
+    const conversationHistory: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = []
+    
+    // Process messages in pairs (user, assistant) or just user messages
+    for (const msg of recentMessages) {
       if (msg.role === 'user') {
         conversationHistory.push({
           role: 'user',
@@ -72,7 +72,18 @@ Keep responses concise (2-4 sentences typically) but comprehensive. Be a friend 
           parts: [{ text: msg.content }],
         })
       }
-    })
+    }
+
+    // Ensure there's at least one user message (if conversation history is empty, use the last message)
+    if (conversationHistory.length === 0 && messages.length > 0) {
+      const lastMessage = messages[messages.length - 1]
+      if (lastMessage.role === 'user') {
+        conversationHistory.push({
+          role: 'user',
+          parts: [{ text: lastMessage.content }],
+        })
+      }
+    }
 
     // Initialize Gemini model
     const genAI = getGeminiClient()
@@ -96,6 +107,7 @@ Keep responses concise (2-4 sentences typically) but comprehensive. Be a friend 
   } catch (error: any) {
     console.error('Chat error:', error)
     console.error('Error details:', error?.message, error?.stack)
+    console.error('Full error object:', JSON.stringify(error, null, 2))
     
     // Provide more specific error messages
     let errorMessage = 'Failed to get chat response'
@@ -103,10 +115,22 @@ Keep responses concise (2-4 sentences typically) but comprehensive. Be a friend 
       errorMessage = 'AI service configuration error. Please contact support.'
     } else if (error?.message?.includes('rate limit')) {
       errorMessage = 'AI service is busy. Please try again in a moment.'
+    } else if (error?.message) {
+      // Include more details in development
+      errorMessage = process.env.NODE_ENV === 'development' 
+        ? `Failed to get chat response: ${error.message}` 
+        : 'Failed to get chat response'
     }
     
     return NextResponse.json(
-      { error: errorMessage, details: process.env.NODE_ENV === 'development' ? error?.message : undefined },
+      { 
+        error: errorMessage, 
+        details: process.env.NODE_ENV === 'development' ? {
+          message: error?.message,
+          stack: error?.stack,
+          name: error?.name,
+        } : undefined 
+      },
       { status: 500 }
     )
   }
