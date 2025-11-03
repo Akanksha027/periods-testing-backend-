@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getUserFromRequest, unauthorizedResponse } from '@/lib/auth'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
+// Ensure this route is dynamic
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
 const getGeminiClient = () => {
   if (!process.env.GEMINI_API_KEY) {
     throw new Error('GEMINI_API_KEY is not configured')
