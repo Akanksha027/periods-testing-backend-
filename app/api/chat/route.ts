@@ -535,31 +535,31 @@ Last error: ${errorMsg}`)
     console.error('Error status:', error?.status, error?.statusText)
     console.error('Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2))
     
-            // Provide more specific error messages
-            let errorMessage = 'Failed to get chat response'
-            let statusCode = 500
-            
-            const errorStatus = error?.status || 0
-            const errorMsg = error?.message || ''
-            
-            if (errorStatus === 503 || errorMsg.includes('503') || errorMsg.includes('overloaded')) {
-              errorMessage = 'AI service is temporarily overloaded. Please try again in a moment.'
-              statusCode = 503
-            } else if (errorStatus === 429 || errorMsg.includes('rate limit')) {
-              errorMessage = 'AI service is busy. Please try again in a moment.'
-              statusCode = 429
-            } else if (errorStatus === 404 || errorMsg.includes('404') || errorMsg.toLowerCase().includes('not found')) {
-              errorMessage = 'AI model not found. Please check API configuration.'
-              statusCode = 404
-            } else if (errorMsg.includes('API key') || errorStatus === 401 || errorStatus === 403) {
-              errorMessage = 'AI service configuration error. Please contact support.'
-              statusCode = 500
-            } else if (errorMsg) {
-              // Include more details in development
-              errorMessage = process.env.NODE_ENV === 'development' 
-                ? `Failed to get chat response: ${errorMsg}` 
-                : 'Failed to get chat response. Please try again.'
-            }
+    // Provide more specific error messages
+    let errorMessage = 'Failed to get chat response'
+    let statusCode = 500
+    
+    const errorStatus = error?.status || 0
+    const errorMsg = error?.message || ''
+    
+    if (errorStatus === 503 || errorMsg.includes('503') || errorMsg.includes('overloaded')) {
+      errorMessage = 'AI service is temporarily overloaded. Please try again in a moment.'
+      statusCode = 503
+    } else if (errorStatus === 429 || errorMsg.includes('rate limit')) {
+      errorMessage = 'AI service is busy. Please try again in a moment.'
+      statusCode = 429
+    } else if (errorStatus === 404 || errorMsg.includes('404') || errorMsg.toLowerCase().includes('not found')) {
+      errorMessage = 'AI model not found. Please check API configuration.'
+      statusCode = 404
+    } else if (errorMsg.includes('API key') || errorStatus === 401 || errorStatus === 403) {
+      errorMessage = 'AI service configuration error. Please contact support.'
+      statusCode = 500
+    } else if (errorMsg) {
+      // Include more details in development
+      errorMessage = process.env.NODE_ENV === 'development' 
+        ? `Failed to get chat response: ${errorMsg}` 
+        : 'Failed to get chat response. Please try again.'
+    }
     
     return NextResponse.json(
       { 
