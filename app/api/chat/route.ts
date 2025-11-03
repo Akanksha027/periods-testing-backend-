@@ -1,18 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getUserFromRequest, unauthorizedResponse } from '@/lib/auth'
-import OpenAI from 'openai'
+import { GoogleGenerativeAI } from '@google/generative-ai'
 
-let openai: OpenAI | null = null
-
-function getOpenAIClient(): OpenAI {
-  if (!openai) {
-    const apiKey = process.env.OPENAI_API_KEY
-    if (!apiKey) {
-      throw new Error('OPENAI_API_KEY not set')
-    }
-    openai = new OpenAI({ apiKey })
+const getGeminiClient = () => {
+  if (!process.env.GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY is not configured')
   }
-  return openai
+  return new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
 }
 
 export async function POST(request: NextRequest) {
@@ -22,6 +16,15 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { messages, symptoms } = body
+
+    // Check if Gemini API key is configured
+    if (!process.env.GEMINI_API_KEY) {
+      console.error('GEMINI_API_KEY is not set in environment variables')
+      return NextResponse.json(
+        { error: 'AI service is not configured. Please contact support.' },
+        { status: 500 }
+      )
+    }
 
     const systemPrompt = `You are Flo Health Assistant, a compassionate, empathetic women's health assistant. Your role is to provide gentle, supportive, and medically-informed guidance about menstrual health symptoms.
 
@@ -43,47 +46,67 @@ When answering questions about symptoms:
 
 Keep responses concise (2-4 sentences typically) but comprehensive. Be a friend who knows about women's health. Be empathetic and kind.`
 
-    let contextMessages: Array<{
-      role: 'system' | 'user' | 'assistant'
-      content: string
-    }> = [
-      { role: 'system', content: systemPrompt },
-    ]
+    // Build the conversation history for Gemini
+    const conversationHistory: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = []
 
-    // Add symptom context if provided
+    // Add symptom context to system prompt if provided
+    let enhancedSystemPrompt = systemPrompt
     if (symptoms && symptoms.length > 0) {
       const symptomsList = symptoms
         .map((s: any) => `${s.symptom} (${s.severity?.replace('_', ' ') || 'moderate'})`)
         .join(', ')
-      contextMessages.push({
-        role: 'assistant',
-        content: `The user has been tracking these symptoms: ${symptomsList}. When answering, consider all these symptoms together to provide comprehensive advice. Tell them if they are okay, if they are severe, and what they should do. Be caring and supportive.`,
-      })
+      enhancedSystemPrompt += `\n\nContext: The user has been tracking these symptoms: ${symptomsList}. When answering, consider all these symptoms together to provide comprehensive advice. Tell them if they are okay, if they are severe, and what they should do. Be caring and supportive.`
     }
 
     // Add conversation history (limit to last 10 messages to avoid token limits)
     const recentMessages = messages.slice(-10)
-    contextMessages.push(
-      ...recentMessages.map((msg: { role: string; content: string }) => ({
-        role: msg.role as 'user' | 'assistant',
-        content: msg.content,
-      }))
-    )
-
-    const completion = await getOpenAIClient().chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: contextMessages as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
-      temperature: 0.7,
-      max_tokens: 300,
+    recentMessages.forEach((msg: { role: string; content: string }) => {
+      if (msg.role === 'user') {
+        conversationHistory.push({
+          role: 'user',
+          parts: [{ text: msg.content }],
+        })
+      } else if (msg.role === 'assistant') {
+        conversationHistory.push({
+          role: 'model',
+          parts: [{ text: msg.content }],
+        })
+      }
     })
 
-    const responseContent = completion.choices[0]?.message?.content || 'I apologize, but I\'m having trouble right now. Please try again. 💕'
+    // Initialize Gemini model
+    const genAI = getGeminiClient()
+    const model = genAI.getGenerativeModel({ 
+      model: 'gemini-1.5-flash', // Using the free Gemini Flash model
+      systemInstruction: enhancedSystemPrompt,
+    })
+
+    // Generate response
+    const result = await model.generateContent({
+      contents: conversationHistory,
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 300,
+      },
+    })
+
+    const responseContent = result.response.text() || 'I apologize, but I\'m having trouble right now. Please try again. 💕'
 
     return NextResponse.json({ message: responseContent })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Chat error:', error)
+    console.error('Error details:', error?.message, error?.stack)
+    
+    // Provide more specific error messages
+    let errorMessage = 'Failed to get chat response'
+    if (error?.message?.includes('API key')) {
+      errorMessage = 'AI service configuration error. Please contact support.'
+    } else if (error?.message?.includes('rate limit')) {
+      errorMessage = 'AI service is busy. Please try again in a moment.'
+    }
+    
     return NextResponse.json(
-      { error: 'Failed to get chat response' },
+      { error: errorMessage, details: process.env.NODE_ENV === 'development' ? error?.message : undefined },
       { status: 500 }
     )
   }

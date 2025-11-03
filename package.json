@@ -12,6 +12,7 @@
     "prisma:studio": "prisma studio"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^5.7.0",
     "@supabase/supabase-js": "^2.39.0",
     "next": "^14.0.4",
