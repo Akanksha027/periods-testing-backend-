@@ -1,9 +1,18 @@
 import OpenAI from 'openai'
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+// Lazy initialization of OpenAI client
+let openai: OpenAI | null = null
+
+function getOpenAIClient(): OpenAI {
+  if (!openai) {
+    const apiKey = process.env.OPENAI_API_KEY
+    if (!apiKey) {
+      throw new Error('Missing credentials. Please pass an `apiKey`, or set the `OPENAI_API_KEY` environment variable.')
+    }
+    openai = new OpenAI({ apiKey })
+  }
+  return openai
+}
 
 export interface SymptomWithSeverity {
   symptom: string
@@ -90,7 +99,7 @@ Please provide JSON with:
 
 Be warm, validating, and supportive while being medically accurate.`
 
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAIClient().chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
         { role: 'system', content: systemPrompt },
@@ -135,16 +144,18 @@ function generateFallbackAnalysis(request: AIAnalysisRequest): AIAnalysisRespons
     severity = 'mild'
   }
 
+  const needsDoctor = severity === 'urgent'
+
   return {
     overallAssessment: 'Thank you for tracking your symptoms. Let\'s ensure you get the care you need.',
     severityLevel: severity,
     personalizedMessage: 'Your health matters. We\'re here to support you through this.',
     recommendations: [
       'Continue monitoring your symptoms',
-      severity === 'serious' || severity === 'urgent' ? 'Please consider seeing a healthcare provider' : 'These symptoms may be manageable at home',
+      needsDoctor ? 'Please consider seeing a healthcare provider' : 'These symptoms may be manageable at home',
     ],
     homeRemedies: ['Apply heat to painful areas', 'Stay hydrated', 'Get adequate rest'],
-    doctorAdvice: severity === 'serious' || severity === 'urgent' ? 'Please consider seeing a healthcare provider soon.' : null,
+    doctorAdvice: needsDoctor ? 'Please consider seeing a healthcare provider soon.' : null,
     redFlagAlerts: [],
     possibleConditions: [],
   }
