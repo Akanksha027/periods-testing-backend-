@@ -160,23 +160,27 @@ CRITICAL RULES:
 
     // Build comprehensive user context from ALL their data
     let userCycleContext = ''
-    const hasPeriodData = dbUser?.periods && dbUser.periods.length > 0
-    const hasSymptomData = dbUser?.symptoms && dbUser.symptoms.length > 0
-    const hasMoodData = dbUser?.moods && dbUser.moods.length > 0
-    const hasNoteData = dbUser?.notes && dbUser.notes.length > 0
-    const hasSettings = dbUser?.settings
     
-    if (hasPeriodData || hasSymptomData || hasMoodData || hasNoteData || hasSettings) {
-      userCycleContext += `\n\nCOMPLETE USER PROFILE INFORMATION - Use ALL of this data to provide personalized, comprehensive advice:\n\n`
+    if (!dbUser) {
+      userCycleContext += `\n\nIMPORTANT: User data not found. Provide general guidance only.`
+    } else {
+      const hasPeriodData = dbUser.periods && dbUser.periods.length > 0
+      const hasSymptomData = dbUser.symptoms && dbUser.symptoms.length > 0
+      const hasMoodData = dbUser.moods && dbUser.moods.length > 0
+      const hasNoteData = dbUser.notes && dbUser.notes.length > 0
+      const hasSettings = dbUser.settings !== null
       
-      // User Basic Info
-      userCycleContext += `USER PROFILE:\n`
-      userCycleContext += `- Name: ${userName}\n`
-      userCycleContext += `- Email: ${dbUser?.email || 'not provided'}\n`
-      
-      // Period Data - Complete History
-      if (hasPeriodData) {
-        userCycleContext += `\nPERIOD HISTORY (${dbUser.periods.length} periods tracked):\n`
+      if (hasPeriodData || hasSymptomData || hasMoodData || hasNoteData || hasSettings) {
+        userCycleContext += `\n\nCOMPLETE USER PROFILE INFORMATION - Use ALL of this data to provide personalized, comprehensive advice:\n\n`
+        
+        // User Basic Info
+        userCycleContext += `USER PROFILE:\n`
+        userCycleContext += `- Name: ${userName}\n`
+        userCycleContext += `- Email: ${dbUser.email || 'not provided'}\n`
+        
+        // Period Data - Complete History
+        if (hasPeriodData && dbUser.periods) {
+          userCycleContext += `\nPERIOD HISTORY (${dbUser.periods.length} periods tracked):\n`
         const recentPeriods = dbUser.periods.slice(0, 10)
         recentPeriods.forEach((p, idx) => {
           const start = new Date(p.startDate).toLocaleDateString()
@@ -238,7 +242,7 @@ CRITICAL RULES:
       }
       
       // Symptom Data - Complete History with Patterns
-      if (hasSymptomData) {
+      if (hasSymptomData && dbUser.symptoms) {
         userCycleContext += `\nSYMPTOM TRACKING (${dbUser.symptoms.length} entries):\n`
         
         // Most common symptoms with frequency
@@ -275,7 +279,7 @@ CRITICAL RULES:
       }
       
       // Mood Data - Emotional Patterns
-      if (hasMoodData) {
+      if (hasMoodData && dbUser.moods) {
         userCycleContext += `\nMOOD TRACKING (${dbUser.moods.length} entries):\n`
         
         const moodCounts: Record<string, number> = {}
@@ -300,7 +304,7 @@ CRITICAL RULES:
       }
       
       // Notes - Personal Concerns and Experiences
-      if (hasNoteData) {
+      if (hasNoteData && dbUser.notes) {
         userCycleContext += `\nPERSONAL NOTES (${dbUser.notes.length} entries):\n`
         const recentNotes = dbUser.notes.slice(0, 5)
         recentNotes.forEach((n, idx) => {
@@ -311,14 +315,14 @@ CRITICAL RULES:
       }
       
       // Settings
-      if (hasSettings) {
+      if (hasSettings && dbUser.settings) {
         userCycleContext += `\nUSER SETTINGS:\n`
         userCycleContext += `- Average Cycle Length: ${dbUser.settings.averageCycleLength} days\n`
         userCycleContext += `- Average Period Length: ${dbUser.settings.averagePeriodLength} days\n`
         userCycleContext += `- Reminders: ${dbUser.settings.reminderEnabled ? 'Enabled' : 'Disabled'}\n`
       }
       
-      userCycleContext += `\n\nHOW TO USE THIS DATA FOR PERSONALIZED ADVICE:
+        userCycleContext += `\n\nHOW TO USE THIS DATA FOR PERSONALIZED ADVICE:
 1. Reference her specific patterns when giving advice - "Based on your cycle history..."
 2. Correlate symptoms with her mood patterns - acknowledge if she's been feeling down/anxious
 3. Use her notes to understand personal concerns she's mentioned
@@ -327,8 +331,9 @@ CRITICAL RULES:
 6. Consider her mood patterns when providing emotional support
 7. Reference her personal notes to show you understand her specific situation
 8. Give advice that's tailored to HER patterns, not generic advice`
-    } else {
-      userCycleContext += `\n\nIMPORTANT: The user has NOT entered any data in the app yet (no periods, symptoms, moods, or notes tracked). If they ask about their personal patterns, cycle predictions, or their own symptoms, you should say: "I notice you haven't updated your period and symptom information in the app yet. To give you personalized insights about your cycle patterns and provide advice tailored specifically to you, please log your periods, symptoms, moods, and notes in the app first. However, I'm still here to help you with tips and guidance for what you're experiencing right now!"`
+      } else {
+        userCycleContext += `\n\nIMPORTANT: The user has NOT entered any data in the app yet (no periods, symptoms, moods, or notes tracked). If they ask about their personal patterns, cycle predictions, or their own symptoms, you should say: "I notice you haven't updated your period and symptom information in the app yet. To give you personalized insights about your cycle patterns and provide advice tailored specifically to you, please log your periods, symptoms, moods, and notes in the app first. However, I'm still here to help you with tips and guidance for what you're experiencing right now!"`
+      }
     }
     
     // Add symptom context from current chat if provided
