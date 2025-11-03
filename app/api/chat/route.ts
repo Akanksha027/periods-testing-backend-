@@ -34,18 +34,26 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { messages, symptoms } = body
 
-    // Fetch user's complete data from database
+    // Fetch ALL user data from database for complete context
     const dbUser = await prisma.user.findUnique({
       where: { supabaseId: user.id },
       include: {
         settings: true,
         periods: {
           orderBy: { startDate: 'desc' },
-          take: 12, // Last 12 periods for pattern analysis
+          // Get all periods for complete cycle analysis
         },
         symptoms: {
           orderBy: { date: 'desc' },
-          take: 30, // Last 30 symptom entries
+          // Get all symptoms for comprehensive pattern recognition
+        },
+        moods: {
+          orderBy: { date: 'desc' },
+          // Get all moods to understand emotional patterns
+        },
+        notes: {
+          orderBy: { date: 'desc' },
+          // Get all notes to understand user's personal concerns and experiences
         },
       },
     })
@@ -150,71 +158,174 @@ CRITICAL RULES:
 14. Keep responses COMPLETE - never cut off mid-sentence
 15. Remember: You're helping guide them toward feeling better both emotionally and physically`
 
-    // Build user cycle context
+    // Build comprehensive user context from ALL their data
     let userCycleContext = ''
     const hasPeriodData = dbUser?.periods && dbUser.periods.length > 0
     const hasSymptomData = dbUser?.symptoms && dbUser.symptoms.length > 0
+    const hasMoodData = dbUser?.moods && dbUser.moods.length > 0
+    const hasNoteData = dbUser?.notes && dbUser.notes.length > 0
     const hasSettings = dbUser?.settings
     
-    if (hasPeriodData || hasSymptomData || hasSettings) {
-      userCycleContext += `\n\nUSER'S CYCLE INFORMATION (use this when answering questions about their patterns, cycle, or symptoms):\n`
+    if (hasPeriodData || hasSymptomData || hasMoodData || hasNoteData || hasSettings) {
+      userCycleContext += `\n\nCOMPLETE USER PROFILE INFORMATION - Use ALL of this data to provide personalized, comprehensive advice:\n\n`
       
+      // User Basic Info
+      userCycleContext += `USER PROFILE:\n`
+      userCycleContext += `- Name: ${userName}\n`
+      userCycleContext += `- Email: ${dbUser?.email || 'not provided'}\n`
+      
+      // Period Data - Complete History
       if (hasPeriodData) {
-        const recentPeriods = dbUser.periods.slice(0, 6)
-        const periodDates = recentPeriods.map(p => {
+        userCycleContext += `\nPERIOD HISTORY (${dbUser.periods.length} periods tracked):\n`
+        const recentPeriods = dbUser.periods.slice(0, 10)
+        recentPeriods.forEach((p, idx) => {
           const start = new Date(p.startDate).toLocaleDateString()
           const end = p.endDate ? new Date(p.endDate).toLocaleDateString() : 'ongoing'
-          return `${start} to ${end}${p.flowLevel ? ` (${p.flowLevel} flow)` : ''}`
-        }).join(', ')
-        userCycleContext += `- Recent Period Dates: ${periodDates}\n`
+          userCycleContext += `  ${idx + 1}. ${start} to ${end}${p.flowLevel ? ` - ${p.flowLevel} flow` : ''}\n`
+        })
+        if (dbUser.periods.length > 10) {
+          userCycleContext += `  ... and ${dbUser.periods.length - 10} more periods\n`
+        }
         
-        // Calculate cycle length if we have multiple periods
-        if (recentPeriods.length >= 2) {
+        // Calculate comprehensive cycle statistics
+        if (dbUser.periods.length >= 2) {
           const cycles = []
-          for (let i = 0; i < recentPeriods.length - 1; i++) {
-            const current = new Date(recentPeriods[i].startDate)
-            const next = new Date(recentPeriods[i + 1].startDate)
+          const periodLengths = []
+          for (let i = 0; i < dbUser.periods.length - 1; i++) {
+            const current = new Date(dbUser.periods[i].startDate)
+            const next = new Date(dbUser.periods[i + 1].startDate)
             const diff = Math.ceil((current.getTime() - next.getTime()) / (1000 * 60 * 60 * 24))
             cycles.push(Math.abs(diff))
+            
+            if (dbUser.periods[i].endDate) {
+              const periodStart = new Date(dbUser.periods[i].startDate)
+              const periodEnd = new Date(dbUser.periods[i].endDate)
+              const periodDays = Math.ceil((periodEnd.getTime() - periodStart.getTime()) / (1000 * 60 * 60 * 24)) + 1
+              periodLengths.push(periodDays)
+            }
           }
-          const avgCycle = Math.round(cycles.reduce((a, b) => a + b, 0) / cycles.length)
-          userCycleContext += `- Average Cycle Length: ${avgCycle} days\n`
+          
+          const avgCycle = cycles.length > 0 ? Math.round(cycles.reduce((a, b) => a + b, 0) / cycles.length) : null
+          const avgPeriodLength = periodLengths.length > 0 ? Math.round(periodLengths.reduce((a, b) => a + b, 0) / periodLengths.length) : null
+          
+          if (avgCycle) userCycleContext += `- Average Cycle Length: ${avgCycle} days\n`
+          if (avgPeriodLength) userCycleContext += `- Average Period Duration: ${avgPeriodLength} days\n`
+          
+          // Next period prediction
+          const lastPeriod = new Date(dbUser.periods[0].startDate)
+          const nextPredicted = new Date(lastPeriod)
+          nextPredicted.setDate(nextPredicted.getDate() + avgCycle)
+          userCycleContext += `- Next Period Predicted: Around ${nextPredicted.toLocaleDateString()}\n`
         }
-      }
-      
-      if (hasSymptomData) {
-        const recentSymptoms = dbUser.symptoms.slice(0, 10)
-        const symptomTypes = recentSymptoms.map(s => `${s.type} (severity: ${s.severity}/5)`).join(', ')
-        userCycleContext += `- Recent Symptoms Tracked: ${symptomTypes}\n`
         
-        // Most common symptoms
-        const symptomCounts: Record<string, number> = {}
-        dbUser.symptoms.forEach(s => {
-          symptomCounts[s.type] = (symptomCounts[s.type] || 0) + 1
+        // Current period status
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        const activePeriod = dbUser.periods.find(p => {
+          const start = new Date(p.startDate)
+          start.setHours(0, 0, 0, 0)
+          const end = p.endDate ? new Date(p.endDate) : null
+          if (end) end.setHours(23, 59, 59, 999)
+          return start <= today && (!end || end >= today)
         })
-        const mostCommon = Object.entries(symptomCounts)
-          .sort(([, a], [, b]) => b - a)
-          .slice(0, 3)
-          .map(([type]) => type)
-          .join(', ')
-        if (mostCommon) {
-          userCycleContext += `- Most Common Symptoms: ${mostCommon}\n`
+        if (activePeriod) {
+          const daysInPeriod = Math.ceil((today.getTime() - new Date(activePeriod.startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1
+          userCycleContext += `- Currently on Period: Day ${daysInPeriod} (${activePeriod.flowLevel || 'unknown'} flow)\n`
         }
       }
       
+      // Symptom Data - Complete History with Patterns
+      if (hasSymptomData) {
+        userCycleContext += `\nSYMPTOM TRACKING (${dbUser.symptoms.length} entries):\n`
+        
+        // Most common symptoms with frequency
+        const symptomCounts: Record<string, { count: number; avgSeverity: number; recent: Date[] }> = {}
+        dbUser.symptoms.forEach(s => {
+          if (!symptomCounts[s.type]) {
+            symptomCounts[s.type] = { count: 0, avgSeverity: 0, recent: [] }
+          }
+          symptomCounts[s.type].count++
+          symptomCounts[s.type].avgSeverity += s.severity
+          symptomCounts[s.type].recent.push(new Date(s.date))
+        })
+        
+        const symptomAnalysis = Object.entries(symptomCounts)
+          .map(([type, data]) => ({
+            type,
+            count: data.count,
+            avgSeverity: Math.round((data.avgSeverity / data.count) * 10) / 10,
+            lastOccurrence: new Date(Math.max(...data.recent.map(d => d.getTime())))
+          }))
+          .sort((a, b) => b.count - a.count)
+        
+        userCycleContext += `- Symptom Frequency Analysis:\n`
+        symptomAnalysis.slice(0, 5).forEach(s => {
+          userCycleContext += `  • ${s.type}: ${s.count} times (avg severity: ${s.avgSeverity}/5, last: ${s.lastOccurrence.toLocaleDateString()})\n`
+        })
+        
+        // Recent symptoms
+        const recentSymptoms = dbUser.symptoms.slice(0, 5)
+        userCycleContext += `- Recent Symptoms:\n`
+        recentSymptoms.forEach(s => {
+          userCycleContext += `  • ${new Date(s.date).toLocaleDateString()}: ${s.type} (severity: ${s.severity}/5)\n`
+        })
+      }
+      
+      // Mood Data - Emotional Patterns
+      if (hasMoodData) {
+        userCycleContext += `\nMOOD TRACKING (${dbUser.moods.length} entries):\n`
+        
+        const moodCounts: Record<string, number> = {}
+        dbUser.moods.forEach(m => {
+          moodCounts[m.type] = (moodCounts[m.type] || 0) + 1
+        })
+        
+        const mostCommonMoods = Object.entries(moodCounts)
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, 5)
+          .map(([mood, count]) => `${mood} (${count}x)`)
+          .join(', ')
+        
+        userCycleContext += `- Most Common Moods: ${mostCommonMoods}\n`
+        
+        // Recent moods
+        const recentMoods = dbUser.moods.slice(0, 5)
+        userCycleContext += `- Recent Moods:\n`
+        recentMoods.forEach(m => {
+          userCycleContext += `  • ${new Date(m.date).toLocaleDateString()}: ${m.type}\n`
+        })
+      }
+      
+      // Notes - Personal Concerns and Experiences
+      if (hasNoteData) {
+        userCycleContext += `\nPERSONAL NOTES (${dbUser.notes.length} entries):\n`
+        const recentNotes = dbUser.notes.slice(0, 5)
+        recentNotes.forEach((n, idx) => {
+          const notePreview = n.content.length > 100 ? n.content.substring(0, 100) + '...' : n.content
+          userCycleContext += `  ${idx + 1}. [${new Date(n.date).toLocaleDateString()}] ${notePreview}\n`
+        })
+        userCycleContext += `- Use these notes to understand her personal concerns, experiences, and what matters to her\n`
+      }
+      
+      // Settings
       if (hasSettings) {
+        userCycleContext += `\nUSER SETTINGS:\n`
         userCycleContext += `- Average Cycle Length: ${dbUser.settings.averageCycleLength} days\n`
         userCycleContext += `- Average Period Length: ${dbUser.settings.averagePeriodLength} days\n`
+        userCycleContext += `- Reminders: ${dbUser.settings.reminderEnabled ? 'Enabled' : 'Disabled'}\n`
       }
       
-      userCycleContext += `\n\nUse this data to provide personalized advice:
-- When they mention symptoms, reference if this aligns with their typical patterns
-- Suggest preventive tips based on when they usually experience symptoms in their cycle
-- Give them insights like "Based on your cycle, you might want to prepare for this around [date]"
-- Help them understand their own patterns and guide them on how to manage better
-- Provide emotional support acknowledging their specific challenges based on their tracked data`
+      userCycleContext += `\n\nHOW TO USE THIS DATA FOR PERSONALIZED ADVICE:
+1. Reference her specific patterns when giving advice - "Based on your cycle history..."
+2. Correlate symptoms with her mood patterns - acknowledge if she's been feeling down/anxious
+3. Use her notes to understand personal concerns she's mentioned
+4. Predict based on her cycle: "Your next period is predicted around [date], so you might want to..."
+5. Address her most common symptoms proactively: "Since you frequently experience [symptom], here's how to prepare..."
+6. Consider her mood patterns when providing emotional support
+7. Reference her personal notes to show you understand her specific situation
+8. Give advice that's tailored to HER patterns, not generic advice`
     } else {
-      userCycleContext += `\n\nIMPORTANT: The user has NOT entered any cycle or symptom data in the app yet. If they ask about their personal patterns, cycle predictions, or their own symptoms, you should say: "I notice you haven't updated your period and symptom information in the app yet. To give you personalized insights about your cycle patterns and provide advice tailored specifically to you, please log your periods and symptoms in the app first. However, I'm still here to help you with tips and guidance for what you're experiencing right now!"`
+      userCycleContext += `\n\nIMPORTANT: The user has NOT entered any data in the app yet (no periods, symptoms, moods, or notes tracked). If they ask about their personal patterns, cycle predictions, or their own symptoms, you should say: "I notice you haven't updated your period and symptom information in the app yet. To give you personalized insights about your cycle patterns and provide advice tailored specifically to you, please log your periods, symptoms, moods, and notes in the app first. However, I'm still here to help you with tips and guidance for what you're experiencing right now!"`
     }
     
     // Add symptom context from current chat if provided
