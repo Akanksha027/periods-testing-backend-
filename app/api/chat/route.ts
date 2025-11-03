@@ -430,43 +430,86 @@ CRITICAL RULES:
     let result
     let lastError: any = null
     
+    // Retry logic helper function
+    const tryWithRetry = async (modelName: string, maxRetries = 2): Promise<any> => {
+      let attempt = 0
+      while (attempt < maxRetries) {
+        try {
+          const model = genAI.getGenerativeModel({ 
+            model: modelName, 
+            systemInstruction: enhancedSystemPrompt,
+          })
+          
+          if (attempt > 0) {
+            // Exponential backoff: wait 1s, 2s, 4s...
+            const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000)
+            console.log(`Retrying ${modelName} after ${delay}ms (attempt ${attempt + 1}/${maxRetries})`)
+            await new Promise(resolve => setTimeout(resolve, delay))
+          }
+          
+          console.log(`Calling Gemini API (${modelName}) - attempt ${attempt + 1}/${maxRetries}`)
+          const response = await model.generateContent({
+            contents: conversationHistory,
+            generationConfig: {
+              temperature: 0.7,
+              maxOutputTokens: 2000,
+            },
+          })
+          
+          console.log(`✅ Successfully got response from Gemini model: ${modelName}`)
+          return response
+        } catch (error: any) {
+          const errorStatus = error?.status || 0
+          const errorMsg = error?.message || error?.statusText || 'Unknown error'
+          
+          // If it's a 503 (overloaded) or 429 (rate limit), retry
+          if ((errorStatus === 503 || errorStatus === 429 || errorMsg.includes('503') || errorMsg.includes('overloaded') || errorMsg.includes('rate limit')) && attempt < maxRetries - 1) {
+            attempt++
+            console.log(`⚠️ ${modelName} returned ${errorStatus} (overloaded/rate limited), will retry...`)
+            continue
+          }
+          
+          // If it's a 404 (model not found), don't retry, try next model
+          if (errorStatus === 404 || errorMsg.includes('404') || errorMsg.toLowerCase().includes('not found')) {
+            throw { ...error, isModelNotFound: true }
+          }
+          
+          // Other errors: if last attempt, throw; otherwise retry
+          if (attempt < maxRetries - 1) {
+            attempt++
+            continue
+          }
+          
+          throw error
+        }
+      }
+    }
+    
     for (const modelName of modelNames) {
       try {
         console.log(`Trying Gemini model: ${modelName}`)
-        const model = genAI.getGenerativeModel({ 
-          model: modelName, 
-          systemInstruction: enhancedSystemPrompt,
-        })
-        
-        console.log(`Calling Gemini API (${modelName}) with conversation history length:`, conversationHistory.length)
-
-        // Generate response - this is where 404 errors occur if model doesn't exist
-        result = await model.generateContent({
-          contents: conversationHistory,
-          generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 2000, // Increased significantly to prevent cut-off responses
-          },
-        })
-        
-        console.log(`✅ Successfully got response from Gemini model: ${modelName}`)
+        result = await tryWithRetry(modelName)
         break
       } catch (error: any) {
         const errorMsg = error?.message || error?.statusText || 'Unknown error'
-        console.log(`❌ Failed with ${modelName}:`, errorMsg)
+        const errorStatus = error?.status || 0
+        console.log(`❌ Failed with ${modelName}:`, errorMsg, `(Status: ${errorStatus})`)
         lastError = error
         
-        // Check if it's a 404 (model not found) - try next model
-        if (error?.status === 404 || error?.statusText === 'Not Found' || errorMsg.includes('404') || errorMsg.toLowerCase().includes('not found')) {
-          console.log(`Model ${modelName} not available (404), trying next...`)
+        // Check if it's a 404 (model not found) or 503/429 (overloaded) - try next model
+        if (error?.isModelNotFound || errorStatus === 404 || errorStatus === 503 || errorStatus === 429 || 
+            errorMsg.includes('404') || errorMsg.includes('503') || errorMsg.toLowerCase().includes('not found')) {
+          console.log(`Model ${modelName} not available or overloaded, trying next...`)
           if (modelName === modelNames[modelNames.length - 1]) {
             // Last model failed - provide helpful error
             const apiKey = process.env.GEMINI_API_KEY
             const keyPreview = apiKey ? `${apiKey.substring(0, 10)}...` : 'not set'
-            throw new Error(`All Gemini models failed. Please verify:
-1. Your API key (${keyPreview}) has access to Generative Language API
-2. The API is enabled in Google Cloud Console
-3. Check available models in: https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_KEY
+            const errorType = errorStatus === 503 || errorStatus === 429 ? 'overloaded' : 'not found'
+            throw new Error(`All Gemini models failed (${errorType}). Please:
+1. Verify your API key (${keyPreview}) has access to Generative Language API
+2. Check that the API is enabled in Google Cloud Console
+3. Wait a moment and try again if models are overloaded
+4. Check available models: https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_KEY
 Last error: ${errorMsg}`)
           }
           continue
@@ -492,25 +535,31 @@ Last error: ${errorMsg}`)
     console.error('Error status:', error?.status, error?.statusText)
     console.error('Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2))
     
-    // Provide more specific error messages
-    let errorMessage = 'Failed to get chat response'
-    let statusCode = 500
-    
-    if (error?.status === 404 || error?.statusText === 'Not Found') {
-      errorMessage = 'AI model not found. Please check API configuration.'
-      statusCode = 404
-    } else if (error?.message?.includes('API key') || error?.status === 401 || error?.status === 403) {
-      errorMessage = 'AI service configuration error. Please contact support.'
-      statusCode = 500
-    } else if (error?.message?.includes('rate limit') || error?.status === 429) {
-      errorMessage = 'AI service is busy. Please try again in a moment.'
-      statusCode = 429
-    } else if (error?.message) {
-      // Include more details in development
-      errorMessage = process.env.NODE_ENV === 'development' 
-        ? `Failed to get chat response: ${error.message}` 
-        : 'Failed to get chat response'
-    }
+            // Provide more specific error messages
+            let errorMessage = 'Failed to get chat response'
+            let statusCode = 500
+            
+            const errorStatus = error?.status || 0
+            const errorMsg = error?.message || ''
+            
+            if (errorStatus === 503 || errorMsg.includes('503') || errorMsg.includes('overloaded')) {
+              errorMessage = 'AI service is temporarily overloaded. Please try again in a moment.'
+              statusCode = 503
+            } else if (errorStatus === 429 || errorMsg.includes('rate limit')) {
+              errorMessage = 'AI service is busy. Please try again in a moment.'
+              statusCode = 429
+            } else if (errorStatus === 404 || errorMsg.includes('404') || errorMsg.toLowerCase().includes('not found')) {
+              errorMessage = 'AI model not found. Please check API configuration.'
+              statusCode = 404
+            } else if (errorMsg.includes('API key') || errorStatus === 401 || errorStatus === 403) {
+              errorMessage = 'AI service configuration error. Please contact support.'
+              statusCode = 500
+            } else if (errorMsg) {
+              // Include more details in development
+              errorMessage = process.env.NODE_ENV === 'development' 
+                ? `Failed to get chat response: ${errorMsg}` 
+                : 'Failed to get chat response. Please try again.'
+            }
     
     return NextResponse.json(
       { 
