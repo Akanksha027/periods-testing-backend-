@@ -43,7 +43,10 @@ When answering questions about symptoms:
 
 Keep responses concise (2-4 sentences typically) but comprehensive. Be a friend who knows about women's health. Be empathetic and kind.`
 
-    let contextMessages: OpenAI.Chat.Completions.ChatCompletionMessage[] = [
+    let contextMessages: Array<{
+      role: 'system' | 'user' | 'assistant'
+      content: string
+    }> = [
       { role: 'system', content: systemPrompt },
     ]
 
@@ -69,7 +72,7 @@ Keep responses concise (2-4 sentences typically) but comprehensive. Be a friend 
 
     const completion = await getOpenAIClient().chat.completions.create({
       model: 'gpt-4o-mini',
-      messages: contextMessages,
+      messages: contextMessages as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
       temperature: 0.7,
       max_tokens: 300,
     })
