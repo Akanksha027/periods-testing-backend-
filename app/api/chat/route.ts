@@ -213,10 +213,12 @@ CRITICAL RULES:
           if (avgPeriodLength) userCycleContext += `- Average Period Duration: ${avgPeriodLength} days\n`
           
           // Next period prediction
-          const lastPeriod = new Date(dbUser.periods[0].startDate)
-          const nextPredicted = new Date(lastPeriod)
-          nextPredicted.setDate(nextPredicted.getDate() + avgCycle)
-          userCycleContext += `- Next Period Predicted: Around ${nextPredicted.toLocaleDateString()}\n`
+          if (avgCycle) {
+            const lastPeriod = new Date(dbUser.periods[0].startDate)
+            const nextPredicted = new Date(lastPeriod)
+            nextPredicted.setDate(nextPredicted.getDate() + avgCycle)
+            userCycleContext += `- Next Period Predicted: Around ${nextPredicted.toLocaleDateString()}\n`
+          }
         }
         
         // Current period status
