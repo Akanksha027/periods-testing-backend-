@@ -2,6 +2,18 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getUserFromRequest, unauthorizedResponse } from '@/lib/auth'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
+// Function to list available models (for debugging)
+async function listAvailableModels(apiKey: string) {
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`)
+    const data = await response.json()
+    return data.models?.map((m: any) => m.name) || []
+  } catch (error) {
+    console.error('Error listing models:', error)
+    return []
+  }
+}
+
 // Ensure this route is dynamic
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -101,7 +113,14 @@ Keep responses concise (2-4 sentences typically) but comprehensive. Be a friend 
     // Initialize Gemini client
     const genAI = getGeminiClient()
     
-    // Try models in order - model initialization doesn't fail, so we need to try generateContent
+    // List available models first (for debugging)
+    if (process.env.NODE_ENV === 'development') {
+      const availableModels = await listAvailableModels(process.env.GEMINI_API_KEY!)
+      console.log('Available Gemini models:', availableModels.slice(0, 10)) // Log first 10
+    }
+    
+    // Try models in order - using the most commonly available model names
+    // Format: model name without 'models/' prefix
     const modelNames = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
     
     let result
@@ -129,15 +148,22 @@ Keep responses concise (2-4 sentences typically) but comprehensive. Be a friend 
         console.log(`✅ Successfully got response from Gemini model: ${modelName}`)
         break
       } catch (error: any) {
-        console.log(`❌ Failed with ${modelName}:`, error?.message || error?.statusText || 'Unknown error')
+        const errorMsg = error?.message || error?.statusText || 'Unknown error'
+        console.log(`❌ Failed with ${modelName}:`, errorMsg)
         lastError = error
         
         // Check if it's a 404 (model not found) - try next model
-        if (error?.status === 404 || error?.statusText === 'Not Found' || error?.message?.includes('404') || error?.message?.includes('not found')) {
-          console.log(`Model ${modelName} not available, trying next...`)
+        if (error?.status === 404 || error?.statusText === 'Not Found' || errorMsg.includes('404') || errorMsg.toLowerCase().includes('not found')) {
+          console.log(`Model ${modelName} not available (404), trying next...`)
           if (modelName === modelNames[modelNames.length - 1]) {
-            // Last model failed
-            throw new Error(`All models failed. Last error: ${error?.message || error?.statusText || 'Model not found'}`)
+            // Last model failed - provide helpful error
+            const apiKey = process.env.GEMINI_API_KEY
+            const keyPreview = apiKey ? `${apiKey.substring(0, 10)}...` : 'not set'
+            throw new Error(`All Gemini models failed. Please verify:
+1. Your API key (${keyPreview}) has access to Generative Language API
+2. The API is enabled in Google Cloud Console
+3. Check available models in: https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_KEY
+Last error: ${errorMsg}`)
           }
           continue
         } else {
