@@ -232,11 +232,17 @@ CRITICAL RULES:
           const start = new Date(p.startDate)
           start.setHours(0, 0, 0, 0)
           const end = p.endDate ? new Date(p.endDate) : null
-          if (end) end.setHours(23, 59, 59, 999)
+          if (end) {
+            end.setHours(0, 0, 0, 0)
+            end.setHours(23, 59, 59, 999) // End of day
+          }
           return start <= today && (!end || end >= today)
         })
         if (activePeriod) {
-          const daysInPeriod = Math.ceil((today.getTime() - new Date(activePeriod.startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1
+          const periodStart = new Date(activePeriod.startDate)
+          periodStart.setHours(0, 0, 0, 0)
+          // Use Math.floor to match frontend calculation (same day = 0, then +1 = day 1)
+          const daysInPeriod = Math.floor((today.getTime() - periodStart.getTime()) / (1000 * 60 * 60 * 24)) + 1
           userCycleContext += `- Currently on Period: Day ${daysInPeriod} (${activePeriod.flowLevel || 'unknown'} flow)\n`
         }
       }
