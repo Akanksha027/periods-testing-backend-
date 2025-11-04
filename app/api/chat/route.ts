@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getUserFromRequest, unauthorizedResponse } from '@/lib/auth'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { prisma } from '@/lib/prisma'
+import { findUserByAuthId, ensureUserHasClerkId } from '@/lib/user-helper'
 
 // Function to list available models (for debugging)
 async function listAvailableModels(apiKey: string) {
