@@ -39,6 +39,12 @@ export async function GET(request: NextRequest) {
       dbUser = await findUserByAuthId(user.id)
     }
 
+    // TypeScript guard: ensure dbUser is not null after refetch
+    if (!dbUser) {
+      console.error('[User API] User not found after refetch')
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
+
     // Fetch user with settings
     const dbUserWithSettings = await prisma.user.findUnique({
       where: { id: dbUser.id },
