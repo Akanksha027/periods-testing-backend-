@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getUserFromRequest, unauthorizedResponse } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { findUserByAuthId, ensureUserHasClerkId } from '@/lib/user-helper'
 import { z } from 'zod'
 
 const updateSettingsSchema = z.object({
@@ -18,22 +19,33 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const dbUser = await prisma.user.findUnique({
-      where: { supabaseId: user.id },
+    const dbUser = await findUserByAuthId(user.id)
+
+    if (!dbUser) {
+      console.error('[Settings GET] User not found for authId:', user.id)
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
+
+    if (!dbUser.clerkId) {
+      await ensureUserHasClerkId(dbUser.id, user.id)
+    }
+
+    // Fetch settings separately
+    const dbUserWithSettings = await prisma.user.findUnique({
+      where: { id: dbUser.id },
       include: { settings: true },
     })
 
-    if (!dbUser) {
-      console.error('[Settings GET] User not found for supabaseId:', user.id)
+    if (!dbUserWithSettings) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
     // If settings don't exist, create default settings
-    if (!dbUser.settings) {
-      console.log('[Settings GET] Creating default settings for user:', dbUser.id)
+    if (!dbUserWithSettings.settings) {
+      console.log('[Settings GET] Creating default settings for user:', dbUserWithSettings.id)
       const defaultSettings = await prisma.userSettings.create({
         data: {
-          userId: dbUser.id,
+          userId: dbUserWithSettings.id,
           averageCycleLength: 28,
           averagePeriodLength: 5,
           reminderEnabled: true,
@@ -43,7 +55,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(defaultSettings)
     }
 
-    return NextResponse.json(dbUser.settings)
+    return NextResponse.json(dbUserWithSettings.settings)
   } catch (error: any) {
     console.error('[Settings GET] Error:', error)
     console.error('[Settings GET] Error message:', error?.message)
@@ -63,12 +75,23 @@ export async function PATCH(request: NextRequest) {
   }
 
   try {
-    const dbUser = await prisma.user.findUnique({
-      where: { supabaseId: user.id },
+    const dbUser = await findUserByAuthId(user.id)
+
+    if (!dbUser) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
+
+    if (!dbUser.clerkId) {
+      await ensureUserHasClerkId(dbUser.id, user.id)
+    }
+
+    // Fetch settings separately
+    const dbUserWithSettings = await prisma.user.findUnique({
+      where: { id: dbUser.id },
       include: { settings: true },
     })
 
-    if (!dbUser) {
+    if (!dbUserWithSettings) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
@@ -77,16 +100,16 @@ export async function PATCH(request: NextRequest) {
 
     // Create settings if they don't exist, otherwise update
     let settings
-    if (!dbUser.settings) {
+    if (!dbUserWithSettings.settings) {
       settings = await prisma.userSettings.create({
         data: {
-          userId: dbUser.id,
+          userId: dbUserWithSettings.id,
           ...validatedData,
         },
       })
     } else {
       settings = await prisma.userSettings.update({
-        where: { userId: dbUser.id },
+        where: { userId: dbUserWithSettings.id },
         data: validatedData,
       })
     }

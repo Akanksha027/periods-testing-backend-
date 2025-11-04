@@ -8,12 +8,14 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  // directUrl = env("DIRECT_URL") // Optional, using direct connection for migrations
 }
 
 model User {
   id            String         @id @default(uuid())
   email         String         @unique
-  supabaseId    String         @unique
+  clerkId       String?        @unique @map("clerk_id") // Clerk user ID (e.g., "user_xxxxx") - optional for migration
+  supabaseId    String?        @unique @map("supabase_id") // Keep for backward compatibility
   name          String?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt

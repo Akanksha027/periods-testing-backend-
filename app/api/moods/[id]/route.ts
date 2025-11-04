@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getUserFromRequest, unauthorizedResponse } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { findUserByAuthId, ensureUserHasClerkId } from '@/lib/user-helper'
 
 export async function DELETE(
   request: NextRequest,
@@ -13,12 +14,14 @@ export async function DELETE(
   }
 
   try {
-    const dbUser = await prisma.user.findUnique({
-      where: { supabaseId: user.id },
-    })
+    const dbUser = await findUserByAuthId(user.id)
 
     if (!dbUser) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
+
+    if (!dbUser.clerkId) {
+      await ensureUserHasClerkId(dbUser.id, user.id)
     }
 
     // Check if mood belongs to user

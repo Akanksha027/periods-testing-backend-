@@ -35,8 +35,22 @@ export async function POST(request: NextRequest) {
     const { messages, symptoms } = body
 
             // Fetch user data from database - LIMIT to recent data for performance
-            const dbUser = await prisma.user.findUnique({
-              where: { supabaseId: user.id },
+            const dbUser = await findUserByAuthId(user.id)
+            
+            if (!dbUser) {
+              return NextResponse.json(
+                { error: 'User not found' },
+                { status: 404 }
+              )
+            }
+
+            if (!dbUser.clerkId) {
+              await ensureUserHasClerkId(dbUser.id, user.id)
+            }
+
+            // Fetch user with all related data
+            const dbUserWithData = await prisma.user.findUnique({
+              where: { id: dbUser.id },
               include: {
                 settings: true,
                 periods: {
@@ -57,7 +71,15 @@ export async function POST(request: NextRequest) {
                 },
               },
             })
-    const userName = dbUser?.name || 'there'
+
+            if (!dbUserWithData) {
+              return NextResponse.json(
+                { error: 'User not found' },
+                { status: 404 }
+              )
+            }
+
+    const userName = dbUserWithData.name || 'there'
 
     // Check if Gemini API key is configured
     if (!process.env.GEMINI_API_KEY) {
@@ -161,14 +183,14 @@ CRITICAL RULES:
     // Build comprehensive user context from ALL their data
     let userCycleContext = ''
     
-    if (!dbUser) {
+    if (!dbUserWithData) {
       userCycleContext += `\n\nIMPORTANT: User data not found. Provide general guidance only.`
     } else {
-      const hasPeriodData = dbUser.periods && dbUser.periods.length > 0
-      const hasSymptomData = dbUser.symptoms && dbUser.symptoms.length > 0
-      const hasMoodData = dbUser.moods && dbUser.moods.length > 0
-      const hasNoteData = dbUser.notes && dbUser.notes.length > 0
-      const hasSettings = dbUser.settings !== null
+      const hasPeriodData = dbUserWithData.periods && dbUserWithData.periods.length > 0
+      const hasSymptomData = dbUserWithData.symptoms && dbUserWithData.symptoms.length > 0
+      const hasMoodData = dbUserWithData.moods && dbUserWithData.moods.length > 0
+      const hasNoteData = dbUserWithData.notes && dbUserWithData.notes.length > 0
+      const hasSettings = dbUserWithData.settings !== null
       
       if (hasPeriodData || hasSymptomData || hasMoodData || hasNoteData || hasSettings) {
         userCycleContext += `\n\nCOMPLETE USER PROFILE INFORMATION - Use ALL of this data to provide personalized, comprehensive advice:\n\n`
@@ -176,34 +198,34 @@ CRITICAL RULES:
         // User Basic Info
         userCycleContext += `USER PROFILE:\n`
         userCycleContext += `- Name: ${userName}\n`
-        userCycleContext += `- Email: ${dbUser.email || 'not provided'}\n`
+        userCycleContext += `- Email: ${dbUserWithData.email || 'not provided'}\n`
         
         // Period Data - Complete History
-        if (hasPeriodData && dbUser.periods) {
-          userCycleContext += `\nPERIOD HISTORY (${dbUser.periods.length} periods tracked):\n`
-        const recentPeriods = dbUser.periods.slice(0, 10)
+        if (hasPeriodData && dbUserWithData.periods) {
+          userCycleContext += `\nPERIOD HISTORY (${dbUserWithData.periods.length} periods tracked):\n`
+        const recentPeriods = dbUserWithData.periods.slice(0, 10)
         recentPeriods.forEach((p, idx) => {
           const start = new Date(p.startDate).toLocaleDateString()
           const end = p.endDate ? new Date(p.endDate).toLocaleDateString() : 'ongoing'
           userCycleContext += `  ${idx + 1}. ${start} to ${end}${p.flowLevel ? ` - ${p.flowLevel} flow` : ''}\n`
         })
-        if (dbUser.periods.length > 10) {
-          userCycleContext += `  ... and ${dbUser.periods.length - 10} more periods\n`
+        if (dbUserWithData.periods.length > 10) {
+          userCycleContext += `  ... and ${dbUserWithData.periods.length - 10} more periods\n`
         }
         
         // Calculate comprehensive cycle statistics
-        if (dbUser.periods.length >= 2) {
+        if (dbUserWithData.periods.length >= 2) {
           const cycles = []
           const periodLengths = []
-          for (let i = 0; i < dbUser.periods.length - 1; i++) {
-            const current = new Date(dbUser.periods[i].startDate)
-            const next = new Date(dbUser.periods[i + 1].startDate)
+          for (let i = 0; i < dbUserWithData.periods.length - 1; i++) {
+            const current = new Date(dbUserWithData.periods[i].startDate)
+            const next = new Date(dbUserWithData.periods[i + 1].startDate)
             const diff = Math.ceil((current.getTime() - next.getTime()) / (1000 * 60 * 60 * 24))
             cycles.push(Math.abs(diff))
             
-            const endDate = dbUser.periods[i].endDate
+            const endDate = dbUserWithData.periods[i].endDate
             if (endDate) {
-              const periodStart = new Date(dbUser.periods[i].startDate)
+              const periodStart = new Date(dbUserWithData.periods[i].startDate)
               const periodEnd = new Date(endDate)
               const periodDays = Math.ceil((periodEnd.getTime() - periodStart.getTime()) / (1000 * 60 * 60 * 24)) + 1
               periodLengths.push(periodDays)
@@ -218,7 +240,7 @@ CRITICAL RULES:
           
           // Next period prediction
           if (avgCycle) {
-            const lastPeriod = new Date(dbUser.periods[0].startDate)
+            const lastPeriod = new Date(dbUserWithData.periods[0].startDate)
             const nextPredicted = new Date(lastPeriod)
             nextPredicted.setDate(nextPredicted.getDate() + avgCycle)
             userCycleContext += `- Next Period Predicted: Around ${nextPredicted.toLocaleDateString()}\n`
@@ -236,7 +258,7 @@ CRITICAL RULES:
         const todayLocal = new Date(todayYear, todayMonth, todayDay)
         todayLocal.setHours(0, 0, 0, 0)
         
-        const activePeriod = dbUser.periods.find(p => {
+        const activePeriod = dbUserWithData.periods.find(p => {
           // Parse period start date and normalize to date components
           const start = new Date(p.startDate)
           const startLocal = new Date(start.getFullYear(), start.getMonth(), start.getDate())
@@ -269,12 +291,12 @@ CRITICAL RULES:
       }
       
       // Symptom Data - Complete History with Patterns
-      if (hasSymptomData && dbUser.symptoms) {
-        userCycleContext += `\nSYMPTOM TRACKING (${dbUser.symptoms.length} entries):\n`
+      if (hasSymptomData && dbUserWithData.symptoms) {
+        userCycleContext += `\nSYMPTOM TRACKING (${dbUserWithData.symptoms.length} entries):\n`
         
         // Most common symptoms with frequency
         const symptomCounts: Record<string, { count: number; avgSeverity: number; recent: Date[] }> = {}
-        dbUser.symptoms.forEach(s => {
+        dbUserWithData.symptoms.forEach(s => {
           if (!symptomCounts[s.type]) {
             symptomCounts[s.type] = { count: 0, avgSeverity: 0, recent: [] }
           }
@@ -298,7 +320,7 @@ CRITICAL RULES:
         })
         
         // Recent symptoms
-        const recentSymptoms = dbUser.symptoms.slice(0, 5)
+        const recentSymptoms = dbUserWithData.symptoms.slice(0, 5)
         userCycleContext += `- Recent Symptoms:\n`
         recentSymptoms.forEach(s => {
           userCycleContext += `  • ${new Date(s.date).toLocaleDateString()}: ${s.type} (severity: ${s.severity}/5)\n`
@@ -306,11 +328,11 @@ CRITICAL RULES:
       }
       
       // Mood Data - Emotional Patterns
-      if (hasMoodData && dbUser.moods) {
-        userCycleContext += `\nMOOD TRACKING (${dbUser.moods.length} entries):\n`
+      if (hasMoodData && dbUserWithData.moods) {
+        userCycleContext += `\nMOOD TRACKING (${dbUserWithData.moods.length} entries):\n`
         
         const moodCounts: Record<string, number> = {}
-        dbUser.moods.forEach(m => {
+        dbUserWithData.moods.forEach(m => {
           moodCounts[m.type] = (moodCounts[m.type] || 0) + 1
         })
         
@@ -323,7 +345,7 @@ CRITICAL RULES:
         userCycleContext += `- Most Common Moods: ${mostCommonMoods}\n`
         
         // Recent moods
-        const recentMoods = dbUser.moods.slice(0, 5)
+        const recentMoods = dbUserWithData.moods.slice(0, 5)
         userCycleContext += `- Recent Moods:\n`
         recentMoods.forEach(m => {
           userCycleContext += `  • ${new Date(m.date).toLocaleDateString()}: ${m.type}\n`
@@ -331,9 +353,9 @@ CRITICAL RULES:
       }
       
       // Notes - Personal Concerns and Experiences
-      if (hasNoteData && dbUser.notes) {
-        userCycleContext += `\nPERSONAL NOTES (${dbUser.notes.length} entries):\n`
-        const recentNotes = dbUser.notes.slice(0, 5)
+      if (hasNoteData && dbUserWithData.notes) {
+        userCycleContext += `\nPERSONAL NOTES (${dbUserWithData.notes.length} entries):\n`
+        const recentNotes = dbUserWithData.notes.slice(0, 5)
         recentNotes.forEach((n, idx) => {
           const notePreview = n.content.length > 100 ? n.content.substring(0, 100) + '...' : n.content
           userCycleContext += `  ${idx + 1}. [${new Date(n.date).toLocaleDateString()}] ${notePreview}\n`
@@ -342,11 +364,11 @@ CRITICAL RULES:
       }
       
       // Settings
-      if (hasSettings && dbUser.settings) {
+      if (hasSettings && dbUserWithData.settings) {
         userCycleContext += `\nUSER SETTINGS:\n`
-        userCycleContext += `- Average Cycle Length: ${dbUser.settings.averageCycleLength} days\n`
-        userCycleContext += `- Average Period Length: ${dbUser.settings.averagePeriodLength} days\n`
-        userCycleContext += `- Reminders: ${dbUser.settings.reminderEnabled ? 'Enabled' : 'Disabled'}\n`
+        userCycleContext += `- Average Cycle Length: ${dbUserWithData.settings.averageCycleLength} days\n`
+        userCycleContext += `- Average Period Length: ${dbUserWithData.settings.averagePeriodLength} days\n`
+        userCycleContext += `- Reminders: ${dbUserWithData.settings.reminderEnabled ? 'Enabled' : 'Disabled'}\n`
       }
       
         userCycleContext += `\n\nHOW TO USE THIS DATA FOR PERSONALIZED ADVICE:

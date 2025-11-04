@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getUserFromRequest, unauthorizedResponse } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { findUserByAuthId, ensureUserHasClerkId } from '@/lib/user-helper'
 import { z } from 'zod'
 
 const createPeriodSchema = z.object({
@@ -17,13 +18,16 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const dbUser = await prisma.user.findUnique({
-      where: { supabaseId: user.id },
-    })
+    const dbUser = await findUserByAuthId(user.id)
 
     if (!dbUser) {
-      console.error('[Periods GET] User not found for supabaseId:', user.id)
+      console.error('[Periods GET] User not found for authId:', user.id)
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
+
+    // Ensure user has clerkId for future requests
+    if (!dbUser.clerkId) {
+      await ensureUserHasClerkId(dbUser.id, user.id)
     }
 
     const periods = await prisma.period.findMany({
@@ -51,13 +55,16 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const dbUser = await prisma.user.findUnique({
-      where: { supabaseId: user.id },
-    })
+    const dbUser = await findUserByAuthId(user.id)
 
     if (!dbUser) {
-      console.error('[Periods POST] User not found for supabaseId:', user.id)
+      console.error('[Periods POST] User not found for authId:', user.id)
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
+
+    // Ensure user has clerkId for future requests
+    if (!dbUser.clerkId) {
+      await ensureUserHasClerkId(dbUser.id, user.id)
     }
 
     const body = await request.json()

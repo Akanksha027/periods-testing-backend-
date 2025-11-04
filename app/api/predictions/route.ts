@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getUserFromRequest, unauthorizedResponse } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { findUserByAuthId, ensureUserHasClerkId } from '@/lib/user-helper'
 
 export async function GET(request: NextRequest) {
   const user = await getUserFromRequest(request)
@@ -10,8 +11,19 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const dbUser = await prisma.user.findUnique({
-      where: { supabaseId: user.id },
+    const dbUser = await findUserByAuthId(user.id)
+
+    if (!dbUser) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
+
+    if (!dbUser.clerkId) {
+      await ensureUserHasClerkId(dbUser.id, user.id)
+    }
+
+    // Fetch user with settings and periods
+    const dbUserWithData = await prisma.user.findUnique({
+      where: { id: dbUser.id },
       include: {
         settings: true,
         periods: {
@@ -21,23 +33,23 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    if (!dbUser) {
+    if (!dbUserWithData) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
     // Calculate predictions based on past periods
-    const periods = dbUser.periods
+    const periods = dbUserWithData.periods
     
     if (periods.length === 0) {
       // Use default settings if no history
       const today = new Date()
       const nextPeriod = new Date(today)
-      nextPeriod.setDate(nextPeriod.getDate() + dbUser.settings!.averageCycleLength)
+      nextPeriod.setDate(nextPeriod.getDate() + dbUserWithData.settings!.averageCycleLength)
 
       return NextResponse.json({
         nextPeriodDate: nextPeriod.toISOString(),
-        cycleLength: dbUser.settings!.averageCycleLength,
-        periodLength: dbUser.settings!.averagePeriodLength,
+        cycleLength: dbUserWithData.settings!.averageCycleLength,
+        periodLength: dbUserWithData.settings!.averagePeriodLength,
         confidence: 'low',
       })
     }
@@ -57,7 +69,7 @@ export async function GET(request: NextRequest) {
 
     const avgCycleLength = cycleCount > 0 
       ? Math.round(totalCycleLength / cycleCount)
-      : dbUser.settings!.averageCycleLength
+      : dbUserWithData.settings!.averageCycleLength
 
     // Calculate average period length
     let totalPeriodLength = 0
@@ -76,7 +88,7 @@ export async function GET(request: NextRequest) {
 
     const avgPeriodLength = periodCount > 0
       ? Math.round(totalPeriodLength / periodCount)
-      : dbUser.settings!.averagePeriodLength
+      : dbUserWithData.settings!.averagePeriodLength
 
     // Predict next period
     const lastPeriod = new Date(periods[0].startDate)

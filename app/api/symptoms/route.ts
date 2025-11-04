@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getUserFromRequest, unauthorizedResponse } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { findUserByAuthId, ensureUserHasClerkId } from '@/lib/user-helper'
 import { z } from 'zod'
 
 const createSymptomSchema = z.object({
@@ -17,12 +18,14 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const dbUser = await prisma.user.findUnique({
-      where: { supabaseId: user.id },
-    })
+    const dbUser = await findUserByAuthId(user.id)
 
     if (!dbUser) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
+
+    if (!dbUser.clerkId) {
+      await ensureUserHasClerkId(dbUser.id, user.id)
     }
 
     const searchParams = request.nextUrl.searchParams
@@ -61,12 +64,14 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const dbUser = await prisma.user.findUnique({
-      where: { supabaseId: user.id },
-    })
+    const dbUser = await findUserByAuthId(user.id)
 
     if (!dbUser) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
+
+    if (!dbUser.clerkId) {
+      await ensureUserHasClerkId(dbUser.id, user.id)
     }
 
     const body = await request.json()
