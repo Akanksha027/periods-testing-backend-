@@ -453,7 +453,7 @@ CRITICAL RULES:
             contents: conversationHistory,
             generationConfig: {
               temperature: 0.7,
-              maxOutputTokens: 1500, // Reduced from 2000 for faster responses
+              maxOutputTokens: 8192, // Increased to allow complete responses without cutting off
               topP: 0.9,
               topK: 40,
             },
