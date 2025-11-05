@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { clerkClient } from '@clerk/nextjs/server'
+import { jwtVerify } from 'jose'
 
 export async function getUserFromRequest(request: NextRequest) {
   try {
@@ -23,11 +23,21 @@ export async function getUserFromRequest(request: NextRequest) {
     
     let sessionClaims = null
     try {
-      const clerkClientInstance = await clerkClient()
+      // Manual verification using jose library
+      // Since we're using a custom Authorization header, we need to verify manually
+      // Get Clerk secret key from environment
+      const clerkSecretKey = process.env.CLERK_SECRET_KEY
+      if (!clerkSecretKey) {
+        console.error('[Auth] CLERK_SECRET_KEY not configured')
+        return null
+      }
+
+      // Verify JWT token using jose library
+      // Clerk tokens are JWTs signed with the secret key
+      const secret = new TextEncoder().encode(clerkSecretKey)
+      const { payload } = await jwtVerify(token, secret)
       
-      // Verify token - this validates the JWT signature and claims
-      // Clerk automatically uses CLERK_SECRET_KEY from environment
-      sessionClaims = await clerkClientInstance.verifyToken(token)
+      sessionClaims = payload as any
       
       if (!sessionClaims || !sessionClaims.sub) {
         console.log('[Auth] Invalid token or missing subject claim')
@@ -64,8 +74,8 @@ export async function getUserFromRequest(request: NextRequest) {
     // Return user object with Clerk ID
     // The sub (subject) claim contains the user ID (e.g., "user_xxxxx")
     const user = {
-      id: sessionClaims!.sub,
-      email: sessionClaims!.email || null,
+      id: sessionClaims!.sub as string,
+      email: (sessionClaims!.email as string) || null,
     }
     console.log('[Auth] Token verified for user:', user.id)
     return user
